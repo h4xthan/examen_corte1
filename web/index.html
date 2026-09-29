@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DVBS — Libros & Relatos</title>
+    <!--
+      Content-Security-Policy, measured against the built output rather than
+      assumed. `npm run build` produces a dist/index.html with no inline <script>
+      and no inline <style>: Vite 5 extracts both into /assets, which is what
+      makes a policy without 'unsafe-inline' possible. The previous version of
+      this app ran on `default-src 'self' 'unsafe-inline'`, which is close to a
+      no-op: it permits the exact thing a CSP exists to forbid.
+
+      object-src 'none' is the directive for the bug that was here. The review
+      image used to be an <object data>, which loads the file as a document in
+      this origin; with object-src none that rendering path does not exist, and
+      an <img> plus a re-encoded raster is the only way in.
+
+      frame-ancestors is silently ignored in a meta tag. nginx sets the same
+      policy as a real header, and that is the one that stops clickjacking.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self';
+               script-src 'self';
+               style-src 'self' https://fonts.googleapis.com;
+               font-src 'self' https://fonts.gstatic.com;
+               img-src 'self' data: https:;
+               connect-src 'self';
+               object-src 'none';
+               base-uri 'self';
+               form-action 'self'"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=Instrument+Sans:ital,wght@0,400..700;1,400..700&display=swap"
+      rel="stylesheet"
+      referrerpolicy="no-referrer"
+    />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

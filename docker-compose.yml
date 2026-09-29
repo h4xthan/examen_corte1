@@ -1,0 +1,50 @@
+services:
+  api:
+    build: .
+    container_name: dvbs-api
+    environment:
+      # DATABASE_URL must be set to the TiDB Cloud MySQL connection string:
+      # mysql://user:password@host:4000/database?tls=tidb&parseTime=true&charset=utf8mb4
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set to a MySQL/TiDB connection string}
+      PORT: "8000"
+      # config.Load() refuses to start without a secret, so this cannot be left
+      # unset. It is a development value for a stack bound to localhost; override
+      # it from the environment for anything reachable from a network.
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET, e.g. openssl rand -base64 48}
+      APP_ORIGIN: http://localhost:3000
+      # Plain http on localhost, so the Secure flag would make the browser drop
+      # the session cookie and login would silently fail.
+      COOKIE_SECURE: "false"
+      # Every request to the API arrives through the nginx container, so the
+      # limiter can only see a client address if nginx is trusted to report it.
+      # The subnet matches the compose network; outside compose, list the proxy
+      # addresses or leave it empty and the limiter falls back to the peer
+      # address, which behind a proxy means one shared bucket for the whole shop.
+      #
+      # These are development limits. They exist to slow down guessing, not to
+      # survive a determined attack; rate limiting is not an access control.
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-172.16.0.0/12}
+      AUTH_RATE_PER_MINUTE: ${AUTH_RATE_PER_MINUTE:-10}
+      AUTH_RATE_BURST: ${AUTH_RATE_BURST:-20}
+      UPLOAD_RATE_PER_MINUTE: ${UPLOAD_RATE_PER_MINUTE:-20}
+      UPLOAD_RATE_BURST: ${UPLOAD_RATE_BURST:-10}
+      # The catalogue is served from the TiDB Cloud Data App and has no SQL
+      # fallback, so these three are required in every environment. config.Load()
+      # fails at startup rather than letting a half-configured key turn into a
+      # 401 on the first admin click.
+      TIDB_DS_BASE_URL: ${TIDB_DS_BASE_URL:?TIDB_DS_BASE_URL is required: the Data App endpoint}
+      TIDB_DS_PUBLIC_KEY: ${TIDB_DS_PUBLIC_KEY:?TIDB_DS_PUBLIC_KEY is required}
+      TIDB_DS_PRIVATE_KEY: ${TIDB_DS_PRIVATE_KEY:?TIDB_DS_PRIVATE_KEY is required}
+      # Where the backups interface keeps its logical dumps. The directory is
+      # created at boot if it does not exist.
+      BACKUP_DIR: ${BACKUP_DIR:-backups}
+    ports:
+      - "8000:8000"
+
+  web:
+    build: ./web
+    container_name: dvbs-web
+    ports:
+      - "3000:80"
+    depends_on:
+      - api

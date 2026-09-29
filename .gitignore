@@ -1,0 +1,11 @@
+# Frontend
+web/node_modules/
+web/dist/
+
+# Go
+*.exe
+server
+
+# Entorno
+.env
+uploads/
