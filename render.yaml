@@ -38,7 +38,7 @@ services:
       # trailing slash). Change it here or in the dashboard if the subdomain
       # differs.
       - key: APP_ORIGIN
-        value: https://dvbs.netlify.app
+        value: https://examendvbs.netlify.app
       - key: COOKIE_SECURE
         value: "true"
       - key: BACKUP_DIR

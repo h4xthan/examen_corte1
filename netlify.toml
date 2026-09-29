@@ -19,7 +19,7 @@
 # (e.g. https://dvbs-api.onrender.com). Keep the /api prefix on both sides.
 [[redirects]]
   from = "/api/*"
-  to = "https://<RENDER_URL>/api/:splat"
+  to = "https://dvbs-api.onrender.com/api/:splat"
   status = 200
 
 # SPA fallback: BrowserRouter deep links (/admin, /profile, ...) serve the app.
