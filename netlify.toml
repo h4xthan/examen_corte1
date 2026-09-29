@@ -1,0 +1,30 @@
+# Netlify deploy for the bookstore.
+#
+# Netlify only hosts the SPA. The Go API runs on Render and is reached through
+# the proxy rewrite below, which is what keeps the whole page on one origin: the
+# session cookie (SameSite=Lax), the CSRF double-submit token and the CSP's
+# `connect-src 'self'` all keep working without any change to the security
+# model, because the browser only ever talks to this origin.
+
+[build]
+  base = "web"
+  command = "npm ci && npm run build"
+  publish = "dist"
+
+# API → Render. `status = 200` makes this a proxy pass-through, not a redirect:
+# the browser never sees Render, the backend's Set-Cookie lands on this domain
+# and downstream requests carry it back through the rewrite.
+#
+# REPLACE <RENDER_URL> with your Render service URL
+# (e.g. https://dvbs-api.onrender.com). Keep the /api prefix on both sides.
+[[redirects]]
+  from = "/api/*"
+  to = "https://<RENDER_URL>/api/:splat"
+  status = 200
+
+# SPA fallback: BrowserRouter deep links (/admin, /profile, ...) serve the app.
+# It must come after the /api rule so API paths are never rewritten to HTML.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

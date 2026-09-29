@@ -1,0 +1,60 @@
+# Render blueprint for the bookstore API.
+#
+# Deploy: Render → New → Blueprint, or New Web Service pointing at this repo.
+# The service is built from the root Dockerfile (multi-stage Go build) and only
+# runs `seed` + `server`; it never serves the SPA, which lives on Netlify.
+#
+# Secrets (sync: false) are pasted in the Render dashboard on first deploy;
+# nothing below ships a real credential. APP_ORIGIN is the Netlify frontend URL:
+# it is a strict CORS allowlist, so it must match the deployed site exactly.
+
+services:
+  - type: web
+    name: dvbs-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /api/healthz
+    envVars:
+      # Connectivity — paste real values in the Render dashboard.
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: TIDB_DS_BASE_URL
+        sync: false
+      - key: TIDB_DS_PUBLIC_KEY
+        sync: false
+      - key: TIDB_DS_PRIVATE_KEY
+        sync: false
+
+      # The account the seeder creates on first boot.
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+
+      # Frontend origin. Must equal the Netlify site URL (scheme + host, no
+      # trailing slash). Change it here or in the dashboard if the subdomain
+      # differs.
+      - key: APP_ORIGIN
+        value: https://dvbs.netlify.app
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: BACKUP_DIR
+        value: backups
+      - key: UPLOAD_DIR
+        value: uploads
+
+      # Optional: transactional password-reset email. Without SMTP_* the app
+      # uses the logs-only mailer, so reset codes are not delivered.
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_FROM
+        sync: false

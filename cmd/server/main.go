@@ -108,9 +108,15 @@ func main() {
 		}),
 	}
 
+	// The whole API lives under /api so that a static host (Netlify) can proxy a
+	// single prefix to this server while the SPA owns every other path. Without
+	// the prefix, a page route like /admin collides with an API route and needs
+	// an Accept-header hack in the reverse proxy to tell them apart.
+	api := router.New(deps, bookHandler, userHandler, authHandler, orderHandler, orderItemHandler, reviewHandler, couponHandler, paymentMethodHandler, addressHandler, checkoutHandler, adminHandler, uploadHandler, backupHandler)
+
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           router.New(deps, bookHandler, userHandler, authHandler, orderHandler, orderItemHandler, reviewHandler, couponHandler, paymentMethodHandler, addressHandler, checkoutHandler, adminHandler, uploadHandler, backupHandler),
+		Handler:           http.StripPrefix("/api", api),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,

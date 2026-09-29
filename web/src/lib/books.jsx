@@ -1,5 +1,11 @@
+import { apiPath } from '../api/client.js'
+
 export function money(cents) {
   return `$${(cents / 100).toFixed(2)}`
+}
+
+export function coverSrc(book) {
+  return book.url_cover_image ? apiPath(book.url_cover_image) : ''
 }
 
 // There is no hasOffer/finalPrice any more.
@@ -47,7 +53,7 @@ export function Cover({ book, className = '' }) {
   return (
     <div className={`cover ${className}`}>
       {book.url_cover_image ? (
-        <img src={book.url_cover_image} alt={book.title} loading="lazy" />
+        <img src={coverSrc(book)} alt={book.title} loading="lazy" />
       ) : (
         <div className="cover-fallback">
           <span>{initials}</span>

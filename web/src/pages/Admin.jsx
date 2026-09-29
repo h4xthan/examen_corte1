@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
-import { api, ensureCSRF, readCSRF, CSRF_HEADER } from '../api/client.js'
+import { api, apiPath, ensureCSRF, readCSRF, CSRF_HEADER } from '../api/client.js'
 import { useAuth } from '../auth/AuthContext.jsx'
 import { money } from '../lib/books.jsx'
 
@@ -579,7 +579,7 @@ function BackupsTab({ say }) {
     // server also keeps a copy in the backup directory, which is what the list
     // is fed from.
     await ensureCSRF()
-    const res = await fetch('/admin/backup', {
+    const res = await fetch(apiPath('/admin/backup'), {
       method: 'POST',
       credentials: 'include',
       headers: { [CSRF_HEADER]: readCSRF() },
@@ -606,7 +606,7 @@ function BackupsTab({ say }) {
   }
 
   async function download(name) {
-    const res = await fetch(`/admin/backups/${encodeURIComponent(name)}`, {
+    const res = await fetch(apiPath(`/admin/backups/${encodeURIComponent(name)}`), {
       credentials: 'include',
     })
     if (!res.ok) return

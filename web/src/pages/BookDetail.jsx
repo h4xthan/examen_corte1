@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { api, ensureCSRF, readCSRF, CSRF_HEADER, getUser } from '../api/client.js'
+import { api, apiPath, ensureCSRF, readCSRF, CSRF_HEADER, getUser } from '../api/client.js'
 import { addToCart } from '../lib/cart.js'
 import {
   Cover,
@@ -95,7 +95,7 @@ export default function BookDetail() {
     // asks for the token the same way the helper does.
     await ensureCSRF()
     const csrf = readCSRF()
-    const res = await fetch('/uploads', {
+    const res = await fetch(apiPath('/uploads'), {
       method: 'POST',
       credentials: 'include',
       headers: csrf ? { [CSRF_HEADER]: csrf } : {},
@@ -278,13 +278,13 @@ export default function BookDetail() {
                             anything but re-encoded pixels, and this is the second
                             half: an image context has nowhere for a script to run. */}
                         <img
-                          src={r.image_url}
+                          src={apiPath(r.image_url)}
                           width="120"
                           height="120"
                           alt="Imagen adjunta de la reseña"
                           loading="lazy"
                         />
-                        <a href={r.image_url} target="_blank" rel="noreferrer" className="review-image-link">
+                        <a href={apiPath(r.image_url)} target="_blank" rel="noreferrer" className="review-image-link">
                           Ver imagen adjunta
                         </a>
                       </div>
