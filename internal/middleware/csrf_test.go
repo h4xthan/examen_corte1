@@ -374,9 +374,13 @@ func TestCSRFTokenEndpointIsUsable(t *testing.T) {
 	}
 }
 
-// TestCSRFTokenEndpointIsStable stops the server from handing out a fresh token
-// on every poll, which would invalidate the token a page already read.
-func TestCSRFTokenEndpointIsStable(t *testing.T) {
+// TestCSRFTokenEndpointRotates is the recovery half of double-submit: the
+// bootstrap endpoint re-mints on demand and collapses stale or duplicated
+// cookies under a single authoritative value, which is what lets a client that
+// was rejected (cookie and header disagreed) pull itself out. The middleware
+// still keeps an existing token lazy and stable — that is what
+// TestCSRFDoesNotOverwriteExistingToken pins down.
+func TestCSRFTokenEndpointRotates(t *testing.T) {
 	first := httptest.NewRecorder()
 	CSRFToken(false).ServeHTTP(first, httptest.NewRequest(http.MethodGet, "/auth/csrf", nil))
 	issued := cookieFrom(t, first, CSRFCookieName)
@@ -389,8 +393,23 @@ func TestCSRFTokenEndpointIsStable(t *testing.T) {
 	second := httptest.NewRecorder()
 	CSRFToken(false).ServeHTTP(second, req)
 
-	if c := cookieFrom(t, second, CSRFCookieName); c != nil {
-		t.Fatal("an existing token was replaced")
+	rotated := cookieFrom(t, second, CSRFCookieName)
+	if rotated == nil {
+		t.Fatal("an existing token was not replaced: the recovery path can never mint")
+	}
+	if rotated.Value == issued.Value {
+		t.Fatal("the endpoint returned the same token; a desynced client stays desynced")
+	}
+
+	// And the fresh token it handed out is accepted on a state-changing request.
+	ran := false
+	req2 := httptest.NewRequest(http.MethodPost, "/checkout", nil)
+	req2.AddCookie(rotated)
+	req2.Header.Set(CSRFHeader, rotated.Value)
+	post := httptest.NewRecorder()
+	CSRF(false)(okHandler(&ran)).ServeHTTP(post, req2)
+	if !ran {
+		t.Fatalf("the rotated token was rejected; status %d", post.Code)
 	}
 }
 

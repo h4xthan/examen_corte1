@@ -171,6 +171,9 @@ type Querier interface {
 	IncrementBookStock(ctx context.Context, arg IncrementBookStockParams) error
 	// The three panels' history, newest first. entity filters the view a tab asks
 	// for; limit is pages of 200 so a history cannot grow an unbounded response.
+	// The primary key is AUTO_RANDOM, so id order is not insert order: ORDER BY id DESC
+	// returns a random slice of the table and the newest pages vanish behind LIMIT.
+	// created_at is the true sequence of events; id only breaks same-millisecond ties.
 	ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([]AuditLog, error)
 	// The moderation queue.
 	//

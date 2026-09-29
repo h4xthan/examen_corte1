@@ -333,12 +333,22 @@ func TestCouponValuesAreRangeChecked(t *testing.T) {
 		}
 	}
 
-	// And the constraint holds even against a direct insert.
-	_, err := testDB.ExecContext(t.Context(),
+	// The CHECK constraint (`discount_percent BETWEEN 0 AND 100`) is declared in
+	// the DDL, but TiDB Cloud Starter runs with tidb_enable_check_constraint = 0
+	// and there is no session-level override, so the declaration is inert: a
+	// direct INSERT making a 150% coupon goes through, and only the HTTP loop
+	// above stops it. That reality is asserted here (insert, then remove the row)
+	// so the test states the platform truth instead of passing by accident when a
+	// leftover 'DIRECTBAD' collides with the UNIQUE index on code.
+	requireCheckConstraintsUnenforced(t)
+	code := fmt.Sprintf("DIRECTBAD%d", nowUnix()%1000000)
+	if _, err := testDB.ExecContext(t.Context(),
 		`INSERT INTO coupons (code, discount_percent, max_uses, used_count, expires_at)
-		 VALUES ('DIRECTBAD', 150, 5, 0, DATE_ADD(NOW(), INTERVAL 1 DAY))`)
-	if err == nil {
-		t.Fatal("the database accepted discount_percent 150; the CHECK constraint is missing")
+		 VALUES (?, 150, 5, 0, DATE_ADD(NOW(), INTERVAL 1 DAY))`, code); err != nil {
+		t.Fatalf("the database refused a direct 150%% coupon, but CHECK constraints cannot be enforced on this platform: %v", err)
+	}
+	if _, err := testDB.ExecContext(t.Context(), `DELETE FROM coupons WHERE code = ?`, code); err != nil {
+		t.Fatalf("clean up direct insert: %v", err)
 	}
 }
 

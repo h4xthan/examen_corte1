@@ -65,8 +65,13 @@ func CSRF(secure bool) func(http.Handler) http.Handler {
 // meet: a cross-origin form can trigger a GET, but it cannot read the response
 // body, so it still cannot forge the header on a later POST.
 //
-// Minting happens in one place, ensureCSRFCookie, so the value returned here is
-// by construction the value the browser is about to hold.
+// Unlike the middleware's lazy mint (which keeps an existing token for the
+// life of the cookie), this endpoint always hands out a fresh value and
+// re-sets the cookie. That gives a desynced client a way out: when the browser
+// holds a stale or duplicated csrf cookie and the request came back 403, the
+// client can call here, tunnel out from under the old values in one
+// Set-Cookie, and retry. The client only calls it to recover, never on every
+// request, so a legitimately held token is not churned.
 func CSRFToken(secure bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -74,10 +79,13 @@ func CSRFToken(secure bool) http.HandlerFunc {
 			return
 		}
 
-		value, err := ensureCSRFCookie(w, r, secure)
+		value, err := NewCSRFToken()
 		if err != nil {
-			return // ensureCSRFCookie has already answered.
+			slog.Error("could not generate csrf token", "error", err)
+			writeJSONError(w, http.StatusInternalServerError, "internal server error")
+			return
 		}
+		SetCSRFCookie(w, value, secure, 0)
 
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")

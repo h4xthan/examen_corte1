@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
-import { api, apiPath, ensureCSRF, readCSRF, CSRF_HEADER } from '../api/client.js'
+import { api, apiPath, unsafeFetch } from '../api/client.js'
 import { useAuth } from '../auth/AuthContext.jsx'
 import { money } from '../lib/books.jsx'
 
@@ -577,13 +577,9 @@ function BackupsTab({ say }) {
     // The route answers with the dump itself as a file, so this request is not
     // the JSON helper: the response is the blob that becomes the download. The
     // server also keeps a copy in the backup directory, which is what the list
-    // is fed from.
-    await ensureCSRF()
-    const res = await fetch(apiPath('/admin/backup'), {
-      method: 'POST',
-      credentials: 'include',
-      headers: { [CSRF_HEADER]: readCSRF() },
-    })
+    // is fed from. unsafeFetch attaches the CSRF token and retries once if the
+    // server saw a stale pair.
+    const res = await unsafeFetch('/admin/backup', { method: 'POST' })
     if (!res.ok) {
       const body = await res.json().catch(() => null)
       say('error', body?.error || `Error ${res.status}`)

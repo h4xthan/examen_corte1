@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { api, apiPath, ensureCSRF, readCSRF, CSRF_HEADER, getUser } from '../api/client.js'
+import { api, apiPath, unsafeFetch, getUser } from '../api/client.js'
 import { addToCart } from '../lib/cart.js'
 import {
   Cover,
@@ -91,16 +91,9 @@ export default function BookDetail() {
     const body = new FormData()
     body.append('image', file)
     // This upload is a multipart form, so it cannot go through the JSON helper.
-    // It still needs the session cookie and the CSRF header, which is why it
-    // asks for the token the same way the helper does.
-    await ensureCSRF()
-    const csrf = readCSRF()
-    const res = await fetch(apiPath('/uploads'), {
-      method: 'POST',
-      credentials: 'include',
-      headers: csrf ? { [CSRF_HEADER]: csrf } : {},
-      body,
-    })
+    // unsafeFetch still attaches the session cookie and the CSRF token the same
+    // way the helper does, and retries once if the server rejected the pair.
+    const res = await unsafeFetch('/uploads', { method: 'POST', body })
     const data = await res.json().catch(() => ({}))
     if (res.ok) {
       setReviewImage(data.url)

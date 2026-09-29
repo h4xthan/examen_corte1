@@ -79,6 +79,22 @@ export function ensureCSRF() {
   return csrfPromise
 }
 
+// forceMintCSRF is the recovery step for a rejected state-changing request.
+//
+// The double-submit check only fails when the cookie the browser attached and
+// the header we echoed disagree, which happens when the browser holds a csrf
+// cookie that is stale, was wiped by a browser restart (it is a session cookie,
+// while the session cookie itself survives), or got duplicated. The bootstrap
+// endpoint re-mints and overwrites in a single Set-Cookie, so after this call
+// the browser owns exactly one value and the retried request has nothing left
+// to disagree with. An attacker gains nothing: any page could already have the
+// client call a GET; what it cannot do is read our answer, and the retried POST
+// needs the value we now hold.
+export async function forceMintCSRF() {
+  const res = await fetch(apiPath('/auth/csrf'), { credentials: 'include' })
+  return res.ok ? readCookie(CSRF_COOKIE) : null
+}
+
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 
 // readCSRF is exported for the one request that cannot use the JSON helper,
@@ -86,35 +102,64 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 // decides the value.
 export { readCookie as readCSRF, CSRF_HEADER }
 
-async function request(method, path, body) {
-  const headers = {}
-  if (body !== undefined) headers['Content-Type'] = 'application/json'
-
-  if (!SAFE_METHODS.has(method)) {
+// unsafeFetch is for requests that cannot go through the JSON helper because
+// the body or the response is not JSON (multipart upload, file download). It
+// attaches the CSRF token the same way request() does and retries once after a
+// fresh token mint if the server rejected the pair.
+export async function unsafeFetch(path, init = {}) {
+  const headers = new Headers(init.headers)
+  for (let attempt = 0; attempt < 2; attempt++) {
     await ensureCSRF()
     const token = readCookie(CSRF_COOKIE)
-    if (token) headers[CSRF_HEADER] = token
+    if (token) headers.set(CSRF_HEADER, token)
+    const res = await fetch(apiPath(path), { ...init, headers, credentials: 'include' })
+    if (res.status === 403 && attempt === 0) {
+      await forceMintCSRF()
+      continue
+    }
+    return res
   }
+}
 
-  const res = await fetch(apiPath(path), {
-    method,
-    headers,
-    // Without this the browser never sends the session cookie at all.
-    credentials: 'include',
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  })
+async function request(method, path, body) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const headers = {}
+    if (body !== undefined) headers['Content-Type'] = 'application/json'
 
-  const data = await res.json().catch(() => null)
+    if (!SAFE_METHODS.has(method)) {
+      await ensureCSRF()
+      const token = readCookie(CSRF_COOKIE)
+      if (token) headers[CSRF_HEADER] = token
+    }
 
-  // A 401 means the session is gone or was revoked, most often because the
-  // password was reset. Dropping the cached user stops the UI from continuing to
-  // render an authenticated shell that no longer works.
-  if (res.status === 401) {
-    clearSession()
-    window.dispatchEvent(new CustomEvent('auth:expired'))
+    const res = await fetch(apiPath(path), {
+      method,
+      headers,
+      // Without this the browser never sends the session cookie at all.
+      credentials: 'include',
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    })
+
+    // A 403 here is a desync between cookie and header, not anything the
+    // request did wrong (nothing was written), so it is safe to re-mint the
+    // token and retry once.
+    if (res.status === 403 && attempt === 0 && !SAFE_METHODS.has(method)) {
+      await forceMintCSRF()
+      continue
+    }
+
+    const data = await res.json().catch(() => null)
+
+    // A 401 means the session is gone or was revoked, most often because the
+    // password was reset. Dropping the cached user stops the UI from continuing to
+    // render an authenticated shell that no longer works.
+    if (res.status === 401) {
+      clearSession()
+      window.dispatchEvent(new CustomEvent('auth:expired'))
+    }
+
+    return { status: res.status, ok: res.ok, data }
   }
-
-  return { status: res.status, ok: res.ok, data }
 }
 
 export const api = {

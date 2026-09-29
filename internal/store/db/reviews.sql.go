@@ -215,7 +215,7 @@ SELECT
 FROM reviews r
 JOIN books b ON b.id = r.book_id
 JOIN users u ON u.id = r.user_id
-ORDER BY r.id DESC
+ORDER BY r.created_at DESC, r.id DESC
 `
 
 type ListReviewsForModerationRow struct {

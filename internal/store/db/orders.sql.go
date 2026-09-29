@@ -120,7 +120,7 @@ func (q *Queries) GetOrderByID(ctx context.Context, id int64) (Order, error) {
 }
 
 const getOrdersByUserID = `-- name: GetOrdersByUserID :many
-SELECT id, user_id, status, subtotal_cents, discount_cents, total_cents, coupon_id, created_at FROM orders WHERE user_id = ? ORDER BY id DESC
+SELECT id, user_id, status, subtotal_cents, discount_cents, total_cents, coupon_id, created_at FROM orders WHERE user_id = ? ORDER BY created_at DESC, id DESC
 `
 
 // A customer listing their own orders. The global listing is admin-only, so

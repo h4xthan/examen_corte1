@@ -12,5 +12,8 @@ VALUES (?, ?, ?, ?, ?, ?);
 SELECT id, user_id, user_email, entity, action, entity_id, details, created_at
 FROM audit_log
 WHERE (entity = sqlc.arg(entity) OR sqlc.arg(entity) = '')
-ORDER BY id DESC
+-- The primary key is AUTO_RANDOM, so id order is not insert order: ORDER BY id DESC
+-- returns a random slice of the table and the newest pages vanish behind LIMIT.
+-- created_at is the true sequence of events; id only breaks same-millisecond ties.
+ORDER BY created_at DESC, id DESC
 LIMIT ?;

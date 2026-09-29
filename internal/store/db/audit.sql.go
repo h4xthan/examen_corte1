@@ -47,7 +47,7 @@ const listAuditLogs = `-- name: ListAuditLogs :many
 SELECT id, user_id, user_email, entity, action, entity_id, details, created_at
 FROM audit_log
 WHERE (entity = ? OR ? = '')
-ORDER BY id DESC
+ORDER BY created_at DESC, id DESC
 LIMIT ?
 `
 
@@ -58,6 +58,9 @@ type ListAuditLogsParams struct {
 
 // The three panels' history, newest first. entity filters the view a tab asks
 // for; limit is pages of 200 so a history cannot grow an unbounded response.
+// The primary key is AUTO_RANDOM, so id order is not insert order: ORDER BY id DESC
+// returns a random slice of the table and the newest pages vanish behind LIMIT.
+// created_at is the true sequence of events; id only breaks same-millisecond ties.
 func (q *Queries) ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([]AuditLog, error) {
 	rows, err := q.db.QueryContext(ctx, listAuditLogs, arg.Entity, arg.Entity, arg.Limit)
 	if err != nil {

@@ -2,8 +2,8 @@ version: "2"
 sql:
   - engine: "mysql"
     schema:
-      - "internal/migration/tidb/000001_init.up.sql"
-      - "internal/migration/tidb/000002_panel.up.sql"
+      - "cmd/migrate/migrations/000001_init.up.sql"
+      - "cmd/migrate/migrations/000002_panel.up.sql"
     queries: "internal/store/queries"
     gen:
       go:

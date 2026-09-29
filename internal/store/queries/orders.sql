@@ -25,7 +25,7 @@ DELETE FROM orders WHERE id = ?;
 -- name: GetOrdersByUserID :many
 -- A customer listing their own orders. The global listing is admin-only, so
 -- this is what the frontend uses.
-SELECT * FROM orders WHERE user_id = ? ORDER BY id DESC;
+SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC, id DESC;
 
 -- CountOrders and SumOrderTotals exist for the admin dashboard, which used to load
 -- every row of every table just to count them and add up a column: linear in the
