@@ -48,7 +48,7 @@ func seedBooks(ctx context.Context, books store.Store, db *sql.DB) {
 		if _, err := db.ExecContext(ctx, `DELETE FROM reviews WHERE book_id = ?`, b.ID); err != nil {
 			log.Fatalf("failed to clear reviews for stray book %q: %v", b.ISBN, err)
 		}
-		if err := books.DeleteBook(ctx, int(b.ID)); err != nil {
+		if err := books.DeleteBook(ctx, int(b.ID)); err != nil && !errors.Is(err, sql.ErrNoRows) {
 			log.Fatalf("failed to remove stray book %q: %v", b.ISBN, err)
 		}
 		removed++
@@ -92,7 +92,7 @@ func seedOfficialCoupon(ctx context.Context, coupons store.Coupon) {
 
 	for _, c := range all {
 		if c.Code != officialCouponCode {
-			if err := coupons.DeleteCoupon(ctx, int(c.ID)); err != nil {
+			if err := coupons.DeleteCoupon(ctx, int(c.ID)); err != nil && !errors.Is(err, sql.ErrNoRows) {
 				log.Fatalf("failed to remove stray coupon %q: %v", c.Code, err)
 			}
 			fmt.Printf("removed stray coupon %q\n", c.Code)
