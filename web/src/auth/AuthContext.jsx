@@ -73,10 +73,11 @@ export function AuthProvider({ children }) {
       // Display convenience for navigation. A forged value in sessionStorage
       // only changes what this app offers to click.
       isAdmin: user?.role === 'admin',
-      // A capturista may manage the catalogue and an auditor may only read it;
-      // both are members of the panel, which is the gate RequirePanel checks.
+      // A capturista may manage the catalogue, an auditor may only read the
+      // whole shop, and the admin no longer captures books; all three are
+      // members of the panel, which is the gate RequirePanel checks.
       isPanelMember: user?.role === 'admin' || user?.role === 'capturista' || user?.role === 'auditor',
-      isCatalogWriter: user?.role === 'admin' || user?.role === 'capturista',
+      isCatalogWriter: user?.role === 'capturista',
       setUser: applyUser,
     }),
     [user, checking, applyUser],

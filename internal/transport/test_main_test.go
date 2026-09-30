@@ -322,6 +322,13 @@ func uniqueTestEmail() string {
 const (
 	testAdminEmail    = "admin_suite@dvbs.test"
 	testAdminPassword = "admin-suite-password-1"
+
+	// The capturista the suite speaks as when a test needs the catalogue
+	// captured. Since the role matrix handed the catalogue writes to the
+	// capturista alone — the admin no longer captures books — the helpers that
+	// create books must authenticate as one, seeded the same way as the admin.
+	testCapturistaEmail    = "capturista_suite@dvbs.test"
+	testCapturistaPassword = "capturista-suite-password-1"
 )
 
 var testAdminToken string
@@ -342,6 +349,23 @@ func seedTestAdmin() error {
 	if err != nil {
 		return fmt.Errorf("seed admin: %w", err)
 	}
+	return seedTestCapturista()
+}
+
+func seedTestCapturista() error {
+	hash, err := bcrypt.GenerateFromPassword([]byte(testCapturistaPassword), bcrypt.MinCost)
+	if err != nil {
+		return fmt.Errorf("hash capturista password: %w", err)
+	}
+
+	_, err = testDB.ExecContext(context.Background(), `
+		INSERT INTO users (first_name, last_name, email, password_hash, role, balance_cents)
+		VALUES ('Capturista', 'Suite', ?, ?, ?, 0)
+		ON DUPLICATE KEY UPDATE password_hash = VALUES(password_hash), role = VALUES(role)`,
+		testCapturistaEmail, string(hash), model.RoleCapturista)
+	if err != nil {
+		return fmt.Errorf("seed capturista: %w", err)
+	}
 	return nil
 }
 
@@ -360,14 +384,29 @@ func adminToken(t *testing.T) string {
 	return testAdminToken
 }
 
-// createBookAsAdmin posts a book with an administrator credential, which is what
-// the catalogue write routes now require.
-func createBookAsAdmin(t *testing.T, book map[string]any) (int, *http.Response) {
+var testCapturistaToken string
+
+// capturistaToken signs in as the seeded capturista, the only role that writes
+// the catalogue since the admin was taken off the book routes.
+func capturistaToken(t *testing.T) string {
 	t.Helper()
 
-	resp, out := doJSONAuth(t, http.MethodPost, "/books", adminToken(t), book)
+	if testCapturistaToken != "" {
+		return testCapturistaToken
+	}
+	testCapturistaToken = loginAndGetToken(t, testCapturistaEmail, testCapturistaPassword)
+	return testCapturistaToken
+}
+
+// createBookAsCapturista posts a book with a capturista credential, which is
+// what the catalogue write routes now require: capturing the catalogue is the
+// capturista's job alone.
+func createBookAsCapturista(t *testing.T, book map[string]any) (int, *http.Response) {
+	t.Helper()
+
+	resp, out := doJSONAuth(t, http.MethodPost, "/books", capturistaToken(t), book)
 	if resp.StatusCode != http.StatusCreated {
-		t.Fatalf("POST /books as admin: status %d, want 201 (body %v)", resp.StatusCode, out)
+		t.Fatalf("POST /books as capturista: status %d, want 201 (body %v)", resp.StatusCode, out)
 	}
 	created, ok := out.(map[string]any)
 	if !ok {

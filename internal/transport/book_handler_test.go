@@ -213,12 +213,12 @@ func TestBooksEndToEnd(t *testing.T) {
 		"url_cover_image": "https://example.com/x.jpg",
 	}
 
-	id, _ := createBookAsAdmin(t, book)
+	id, _ := createBookAsCapturista(t, book)
 	if id == 0 {
 		t.Fatal("POST /books: expected generated id")
 	}
 	path := "/books/" + strconv.Itoa(id)
-	admin := adminToken(t)
+	capturista := capturistaToken(t)
 
 	resp, gotAny := doJSON(t, http.MethodGet, path, nil)
 	if resp.StatusCode != http.StatusOK {
@@ -238,8 +238,10 @@ func TestBooksEndToEnd(t *testing.T) {
 		t.Fatal("GET /books: expected at least one book")
 	}
 
+	// The whole lifecycle is the capturista's: the admin reads the manual path
+	// at the end, but no longer writes the catalogue.
 	book["title"] = "Updated Title"
-	resp, updatedAny := doJSONAuth(t, http.MethodPut, path, admin, book)
+	resp, updatedAny := doJSONAuth(t, http.MethodPut, path, capturista, book)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("PUT %s: status %d, want 200", path, resp.StatusCode)
 	}
@@ -248,7 +250,7 @@ func TestBooksEndToEnd(t *testing.T) {
 		t.Fatalf("PUT %s: title %v, want Updated Title", path, updated["title"])
 	}
 
-	resp, _ = doJSONAuth(t, http.MethodDelete, path, admin, nil)
+	resp, _ = doJSONAuth(t, http.MethodDelete, path, capturista, nil)
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("DELETE %s: status %d, want 204", path, resp.StatusCode)
 	}

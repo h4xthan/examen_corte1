@@ -67,7 +67,7 @@ func (h *OrderHandler) Get(w http.ResponseWriter, r *http.Request) {
 		handleStoreError(w, err)
 		return
 	}
-	if !authorizeOwner(w, r, order.UserID) {
+	if middleware.RoleFrom(r.Context()) != model.RoleAuditor && !authorizeOwner(w, r, order.UserID) {
 		return
 	}
 

@@ -25,7 +25,7 @@ func createTestBookWithStock(t *testing.T, priceCents int64, stock int) int64 {
 		"price_cents": priceCents,
 		"stock":       stock,
 	}
-	id, _ := createBookAsAdmin(t, book)
+	id, _ := createBookAsCapturista(t, book)
 	return int64(id)
 }
 

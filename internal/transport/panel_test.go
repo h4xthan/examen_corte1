@@ -39,9 +39,10 @@ func staffUser(t *testing.T, role string) (int64, string) {
 }
 
 // TestCapturistaAndAuditorReachTheCatalogueByRole is the access control the
-// college brief asked for: the capturista manages the catalogue and the auditor
-// only reads it, and neither is an administrator. Both are members of the
-// panel, but the write routes belong to the admin and the capturista only.
+// college brief asked for: the capturista manages the catalogue, the auditor
+// only reads it, and the admin — who used to capture books too — was taken off
+// the catalogue writes. The capturista is therefore the only role that writes,
+// and the role comes from the users table on every request.
 func TestCapturistaAndAuditorReachTheCatalogueByRole(t *testing.T) {
 	capturistaID, capturistaToken := staffUser(t, "capturista")
 	auditorID, auditorToken := staffUser(t, "auditor")
@@ -62,7 +63,17 @@ func TestCapturistaAndAuditorReachTheCatalogueByRole(t *testing.T) {
 	}
 	bookID := idFrom(t, out.(map[string]any), "id")
 
-	// The auditor is refused the write with the same 403 a customer gets:
+	// Admin is refused the write with the same 403 an auditor gets: the admin
+	// can read the catalogue, but capturing it is the capturista's job.
+	resp, out = doJSONAuth(t, http.MethodPost, "/books", adminToken(t), map[string]any{
+		"author": "Autor de roles", "title": "No", "pages": 1,
+		"isbn": uniqueISBN(), "price_cents": 1, "stock": 1,
+	})
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("admin POST /books: status %d, want 403 (body %v)", resp.StatusCode, out)
+	}
+
+	// The auditor is refused the write too, with the same 403 a customer gets:
 	// nothing in the response edges around whether the route exists.
 	resp, out = doJSONAuth(t, http.MethodPost, "/books", auditorToken, map[string]any{
 		"author": "Autor de roles", "title": "Otro", "pages": 1,
@@ -72,10 +83,14 @@ func TestCapturistaAndAuditorReachTheCatalogueByRole(t *testing.T) {
 		t.Errorf("auditor POST /books: status %d, want 403 (body %v)", resp.StatusCode, out)
 	}
 
-	// But the auditor can read the book the capturista just put up.
+	// But the auditor and the admin can read the book the capturista put up.
 	resp, out = doJSONAuth(t, http.MethodGet, "/books/"+strconv.FormatInt(bookID, 10), auditorToken, nil)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("auditor GET /books/{id}: status %d, want 200 (body %v)", resp.StatusCode, out)
+	}
+	resp, out = doJSONAuth(t, http.MethodGet, "/books/"+strconv.FormatInt(bookID, 10), adminToken(t), nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("admin GET /books/{id}: status %d, want 200 (body %v)", resp.StatusCode, out)
 	}
 
 	// An anonymous caller has never been able to write; the guard did not regress.
@@ -383,6 +398,92 @@ func TestBackupsInterface(t *testing.T) {
 	resp, _ = doJSONAuth(t, http.MethodGet, "/admin/backups/..%2F..%2Fetc%2Fpasswd", adminToken(t), nil)
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("GET /admin/backups/{bad-name}: status %d, want 404", resp.StatusCode)
+	}
+}
+
+// TestAuditorReadsEverythingWritesNothing is the role matrix in one pass: the
+// auditor is the window over the whole shop, so every panel reading and both
+// global listings answer 200 — order detail included — while every writing
+// surface answers 403, including downloading a backup dump, which is credential
+// material and stays admin-only. Books follow their own matrix and were closed
+// to the admin too: capturing the catalogue is the capturista's job alone.
+func TestAuditorReadsEverythingWritesNothing(t *testing.T) {
+	_, auditorToken := staffUser(t, "auditor")
+
+	// An order belonging to a customer, so the auditor reads somebody else's.
+	bookID := createTestBook(t, 1500)
+	_, buyerID, buyerToken := setupUsersAndToken(t)
+	buyBook(t, buyerToken, buyerID, bookID, 1)
+
+	for _, path := range []string{
+		"/users",
+		"/orders",
+		"/admin/stats",
+		"/admin/users",
+		"/admin/users/" + strconv.FormatInt(buyerID, 10),
+		"/admin/reviews",
+		"/admin/backups",
+	} {
+		resp, _ := doJSONAuth(t, http.MethodGet, path, auditorToken, nil)
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("auditor GET %s: status %d, want 200", path, resp.StatusCode)
+		}
+	}
+
+	// The order detail of another customer's order is a read too.
+	ordersResp, ordersOut := doJSONAuth(t, http.MethodGet, "/orders", auditorToken, nil)
+	if ordersResp.StatusCode != http.StatusOK {
+		t.Fatalf("auditor GET /orders: status %d, want 200", ordersResp.StatusCode)
+	}
+	var orderID int64
+	for _, o := range ordersOut.([]any) {
+		row := o.(map[string]any)
+		if uid, _ := row["user_id"].(string); uid == strconv.FormatInt(buyerID, 10) {
+			orderID, _ = strconv.ParseInt(row["id"].(string), 10, 64)
+			break
+		}
+	}
+	if orderID == 0 {
+		t.Fatal("the buyer's order is missing from the global listing")
+	}
+	resp, _ := doJSONAuth(t, http.MethodGet, "/orders/"+strconv.FormatInt(orderID, 10), auditorToken, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("auditor GET /orders/{id}: status %d, want 200", resp.StatusCode)
+	}
+
+	// A dump exists, so the download denial below is a real denial, not a 404
+	// wearing one.
+	dumpResp, _ := dumpAsAdmin(t, adminToken(t))
+	if dumpResp.StatusCode != http.StatusOK {
+		t.Fatalf("seed dump: status %d, want 200", dumpResp.StatusCode)
+	}
+	dumpName := backupNameFrom(dumpResp)
+	if dumpName == "" {
+		t.Fatal("seed dump returned no filename")
+	}
+	resp, _ = doJSONAuth(t, http.MethodGet, "/admin/backups/"+dumpName, auditorToken, nil)
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("auditor GET /admin/backups/{name}: status %d, want 403", resp.StatusCode)
+	}
+
+	// Every writing surface is locked: books to the capturista, all other writes
+	// to an admin, and the auditor reaches none of them. (Order writes are
+	// owner-scoped, so the auditor gets the same 404 anyone who is not the owner
+	// gets: no existence oracle.)
+	bookPath := "/books/" + strconv.FormatInt(bookID, 10)
+	for _, w := range []struct{ method, path string }{
+		{http.MethodPut, bookPath},
+		{http.MethodDelete, bookPath},
+		{http.MethodPost, "/books"},
+		{http.MethodPost, "/coupons"},
+		{http.MethodPost, "/admin/users"},
+		{http.MethodPut, "/admin/users/" + strconv.FormatInt(buyerID, 10) + "/role"},
+		{http.MethodPost, "/admin/backup"},
+	} {
+		resp, out := doJSONAuth(t, w.method, w.path, auditorToken, nil)
+		if resp.StatusCode != http.StatusForbidden {
+			t.Errorf("auditor %s %s: status %d, want 403 (body %v)", w.method, w.path, resp.StatusCode, out)
+		}
 	}
 }
 

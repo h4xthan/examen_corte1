@@ -68,10 +68,12 @@ const EMPTY_BOOK = { author: '', title: '', pages: '', isbn: '', price_cents: ''
 export default function Admin() {
   const { user, isAdmin } = useAuth()
   const [tab, setTab] = useState('books')
+  const isAuditor = user?.role === 'auditor'
 
-  // Only an admin asks the server for the management aggregates and the tabs
-  // that go with them; a capturista or auditor works from the catalogue alone.
-  const tabs = isAdmin ? ADMIN_TABS : STAFF_TABS
+  // The auditor sees the whole shop — every tab, all read-only — and the admin
+  // sees the same tabs minus the catalogue capture, which is the capturista's.
+  // The capturista works from the catalogue alone.
+  const tabs = isAdmin || isAuditor ? ADMIN_TABS : STAFF_TABS
   const active = tabs.some((t) => t.key === tab) ? tab : 'books'
 
   return (
@@ -102,9 +104,10 @@ export default function Admin() {
 // that updates its own state optimistically is a panel that can lie about what
 // was saved.
 function Backoffice({ active }) {
-  const { isAdmin, isCatalogWriter } = useAuth()
+  const { isAdmin, isCatalogWriter, user } = useAuth()
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const isAuditor = user?.role === 'auditor'
 
   const say = useCallback((kind, text) => {
     if (kind === 'error') {
@@ -127,6 +130,9 @@ function Backoffice({ active }) {
     return true
   }, [say])
 
+  // Each tab renders read-only for the auditor and writable for the admin; the
+  // catalogue is writable only by the capturista. The server is the control —
+  // these flags only decide which controls to draw.
   return (
     <>
       {error && <p className="error">{error}</p>}
@@ -135,20 +141,20 @@ function Backoffice({ active }) {
       {active === 'books' && (
         <BooksTab reloadKey={notice} run={run} say={say} canWrite={isCatalogWriter} />
       )}
-      {active === 'users' && isAdmin && (
-        <UsersTab run={run} />
+      {(active === 'users' && (isAdmin || isAuditor)) && (
+        <UsersTab run={run} canWrite={isAdmin} />
       )}
-      {active === 'backups' && isAdmin && (
-        <BackupsTab say={say} />
+      {(active === 'backups' && (isAdmin || isAuditor)) && (
+        <BackupsTab say={say} canWrite={isAdmin} />
       )}
-      {active === 'orders' && isAdmin && (
-        <OrdersTab run={run} />
+      {(active === 'orders' && (isAdmin || isAuditor)) && (
+        <OrdersTab run={run} canWrite={isAdmin} />
       )}
-      {active === 'coupons' && isAdmin && (
-        <CouponsTab run={run} />
+      {(active === 'coupons' && (isAdmin || isAuditor)) && (
+        <CouponsTab run={run} canWrite={isAdmin} />
       )}
-      {active === 'reviews' && isAdmin && (
-        <ReviewsTab run={run} />
+      {(active === 'reviews' && (isAdmin || isAuditor)) && (
+        <ReviewsTab run={run} canWrite={isAdmin} />
       )}
     </>
   )
@@ -369,8 +375,9 @@ function Books({ books, onSave, onNotice, canWrite }) {
       </table>
       {!canWrite && (
         <p className="muted">
-          Rol de auditor: el catálogo es de sólo lectura. Consultar un libro
-          queda registrado en el historial de más abajo.
+          El catálogo es de solo lectura para este rol: la captura (alta,
+          modificación y baja) corresponde al capturista. Leer un libro queda
+          registrado en el historial de más abajo.
         </p>
       )}
     </>
@@ -381,7 +388,7 @@ function Books({ books, onSave, onNotice, canWrite }) {
 // Interface 2 — Usuarios
 // ---------------------------------------------------------------------------
 
-function UsersTab({ run }) {
+function UsersTab({ run, canWrite }) {
   const [users, setUsers] = useState([])
 
   const load = useCallback(async () => {
@@ -395,7 +402,7 @@ function UsersTab({ run }) {
 
   return (
     <>
-      <Users users={users} onSave={async (method, path, body, msg) => {
+      <Users users={users} canWrite={canWrite} onSave={async (method, path, body, msg) => {
         const ok = await run(method, path, body, msg)
         if (ok) load()
         return ok
@@ -407,7 +414,7 @@ function UsersTab({ run }) {
   )
 }
 
-function Users({ users, onSave }) {
+function Users({ users, onSave, canWrite }) {
   const { user: me } = useAuth()
   const [form, setForm] = useState({ first_name: '', last_name: '', email: '', password: '', role: 'customer' })
   const [editing, setEditing] = useState(null)
@@ -453,45 +460,47 @@ function Users({ users, onSave }) {
         o una reactivación surten efecto en la sesión que ya tiene el usuario.
       </p>
 
-      <form className="card form admin-form" onSubmit={alta}>
-        <h3>Alta de usuario</h3>
-        <div className="field-row">
-          <div className="field">
-            <label htmlFor="user-first">Nombre</label>
-            <input id="user-first" required value={form.first_name}
-              onChange={(e) => setForm({ ...form, first_name: e.target.value })} />
+      {canWrite && (
+        <form className="card form admin-form" onSubmit={alta}>
+          <h3>Alta de usuario</h3>
+          <div className="field-row">
+            <div className="field">
+              <label htmlFor="user-first">Nombre</label>
+              <input id="user-first" required value={form.first_name}
+                onChange={(e) => setForm({ ...form, first_name: e.target.value })} />
+            </div>
+            <div className="field">
+              <label htmlFor="user-last">Apellidos</label>
+              <input id="user-last" required value={form.last_name}
+                onChange={(e) => setForm({ ...form, last_name: e.target.value })} />
+            </div>
           </div>
-          <div className="field">
-            <label htmlFor="user-last">Apellidos</label>
-            <input id="user-last" required value={form.last_name}
-              onChange={(e) => setForm({ ...form, last_name: e.target.value })} />
+          <div className="field-row">
+            <div className="field">
+              <label htmlFor="user-email">Correo</label>
+              <input id="user-email" required type="email" value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })} />
+            </div>
+            <div className="field">
+              <label htmlFor="user-password">Contraseña</label>
+              <input id="user-password" required type="password" autoComplete="new-password" value={form.password}
+                onChange={(e) => setForm({ ...form, password: e.target.value })} />
+            </div>
+            <div className="field">
+              <label htmlFor="user-role">Rol</label>
+              <select id="user-role" value={form.role}
+                onChange={(e) => setForm({ ...form, role: e.target.value })}>
+                {ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+              </select>
+            </div>
           </div>
-        </div>
-        <div className="field-row">
-          <div className="field">
-            <label htmlFor="user-email">Correo</label>
-            <input id="user-email" required type="email" value={form.email}
-              onChange={(e) => setForm({ ...form, email: e.target.value })} />
-          </div>
-          <div className="field">
-            <label htmlFor="user-password">Contraseña</label>
-            <input id="user-password" required type="password" autoComplete="new-password" value={form.password}
-              onChange={(e) => setForm({ ...form, password: e.target.value })} />
-          </div>
-          <div className="field">
-            <label htmlFor="user-role">Rol</label>
-            <select id="user-role" value={form.role}
-              onChange={(e) => setForm({ ...form, role: e.target.value })}>
-              {ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
-            </select>
-          </div>
-        </div>
-        <button className="btn btn-solid" type="submit">Dar de alta</button>
-      </form>
+          <button className="btn btn-solid" type="submit">Dar de alta</button>
+        </form>
+      )}
 
       <table className="table">
         <thead>
-          <tr><th>ID</th><th>Email</th><th>Nombre</th><th>Rol</th><th>Estado</th><th /></tr>
+          <tr><th>ID</th><th>Email</th><th>Nombre</th><th>Rol</th><th>Estado</th>{canWrite && <th />}</tr>
         </thead>
         <tbody>
           {users.map((u) => (
@@ -514,37 +523,43 @@ function Users({ users, onSave }) {
                 ) : `${u.first_name} ${u.last_name}`}
               </td>
               <td>
-                <select
-                  value={u.role}
-                  aria-label={`Rol de ${u.email}`}
-                  onChange={(e) => onSave('put', `/admin/users/${u.id}/role`, { role: e.target.value }, 'Rol actualizado.')}
-                >
-                  {ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
-                </select>
+                {canWrite ? (
+                  <select
+                    value={u.role}
+                    aria-label={`Rol de ${u.email}`}
+                    onChange={(e) => onSave('put', `/admin/users/${u.id}/role`, { role: e.target.value }, 'Rol actualizado.')}
+                  >
+                    {ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+                  </select>
+                ) : (
+                  <span className={`badge-status ${u.is_active ? 's-completed' : 's-cancelled'}`}>{u.role}</span>
+                )}
               </td>
               <td>
                 <span className={`badge-status ${u.is_active ? 's-completed' : 's-cancelled'}`}>
                   {u.is_active ? 'Activo' : 'De baja'}
                 </span>
               </td>
-              <td className="admin-actions">
-                {editing === u.id ? (
-                  <>
-                    <button className="linklike" onClick={() => saveEdit(u.id)}>Guardar</button>
-                    <button className="linklike" onClick={() => setEditing(null)}>Cancelar</button>
-                  </>
-                ) : (
-                  <>
-                    <button className="linklike" onClick={() => startEdit(u)}>Modificar</button>
-                    {u.is_active
-                      ? (me?.id !== u.id && <button className="linklike" onClick={() => baja(u)}>Baja</button>)
-                      : <button className="linklike" onClick={() => reactivar(u)}>Reactivar</button>}
-                  </>
-                )}
-              </td>
+              {canWrite && (
+                <td className="admin-actions">
+                  {editing === u.id ? (
+                    <>
+                      <button className="linklike" onClick={() => saveEdit(u.id)}>Guardar</button>
+                      <button className="linklike" onClick={() => setEditing(null)}>Cancelar</button>
+                    </>
+                  ) : (
+                    <>
+                      <button className="linklike" onClick={() => startEdit(u)}>Modificar</button>
+                      {u.is_active
+                        ? (me?.id !== u.id && <button className="linklike" onClick={() => baja(u)}>Baja</button>)
+                        : <button className="linklike" onClick={() => reactivar(u)}>Reactivar</button>}
+                    </>
+                  )}
+                </td>
+              )}
             </tr>
           ))}
-          {users.length === 0 && <tr><td colSpan="6" className="muted">No hay usuarios.</td></tr>}
+          {users.length === 0 && <tr><td colSpan={canWrite ? 6 : 5} className="muted">No hay usuarios.</td></tr>}
         </tbody>
       </table>
     </>
@@ -555,7 +570,7 @@ function Users({ users, onSave }) {
 // Interface 3 — Respaldos
 // ---------------------------------------------------------------------------
 
-function BackupsTab({ say }) {
+function BackupsTab({ say, canWrite }) {
   const [rows, setRows] = useState([])
   const [error, setError] = useState('')
 
@@ -621,16 +636,17 @@ function BackupsTab({ say }) {
     <>
       <div className="card-head">
         <h2>Respaldos ({rows.length})</h2>
-        <button className="btn btn-solid btn-small" onClick={create}>Crear respaldo</button>
+        {canWrite && <button className="btn btn-solid btn-small" onClick={create}>Crear respaldo</button>}
       </div>
       <p className="muted">
         TiDB Cloud Starter no expone un BACKUP, así que esto vuelca la base
         completa — contraseñas y tokens incluidos — y lo guarda en el servidor.
-        Sólo un administrador puede crear o descargar uno.
+        Sólo un administrador puede crear o descargar uno; el auditor ve la
+        lista, no el contenido.
       </p>
       <table className="table">
         <thead>
-          <tr><th>Archivo</th><th>Tamaño</th><th>Creado</th><th /></tr>
+          <tr><th>Archivo</th><th>Tamaño</th><th>Creado</th>{canWrite && <th />}</tr>
         </thead>
         <tbody>
           {rows.map((r) => (
@@ -638,12 +654,14 @@ function BackupsTab({ say }) {
               <td><code>{r.name}</code></td>
               <td>{formatBytes(r.size)}</td>
               <td>{new Date(r.created).toLocaleString()}</td>
-              <td>
-                <button className="linklike" onClick={() => download(r.name)}>Descargar</button>
-              </td>
+              {canWrite && (
+                <td>
+                  <button className="linklike" onClick={() => download(r.name)}>Descargar</button>
+                </td>
+              )}
             </tr>
           ))}
-          {rows.length === 0 && <tr><td colSpan="4" className="muted">No hay respaldos todavía.</td></tr>}
+          {rows.length === 0 && <tr><td colSpan={canWrite ? 4 : 3} className="muted">No hay respaldos todavía.</td></tr>}
         </tbody>
       </table>
       <div className="card">
@@ -664,7 +682,7 @@ function formatBytes(n) {
 // Management tabs (admin only)
 // ---------------------------------------------------------------------------
 
-function OrdersTab({ run }) {
+function OrdersTab({ run, canWrite }) {
   const [orders, setOrders] = useState([])
   const load = useCallback(async () => {
     const res = await api.get('/orders')
@@ -672,14 +690,14 @@ function OrdersTab({ run }) {
   }, [])
   useEffect(() => { load() }, [load, run])
 
-  return <Orders orders={orders} onSave={async (m, p, b, msg) => {
+  return <Orders orders={orders} canWrite={canWrite} onSave={async (m, p, b, msg) => {
     const ok = await run(m, p, b, msg)
     if (ok) load()
     return ok
   }} />
 }
 
-function Orders({ orders, onSave }) {
+function Orders({ orders, onSave, canWrite }) {
   const [expanded, setExpanded] = useState(null)
 
   async function loadItems(orderID) {
@@ -722,16 +740,20 @@ function Orders({ orders, onSave }) {
                 <td>{o.created_at ? new Date(o.created_at).toLocaleDateString() : '—'}</td>
                 <td>{money(o.total_cents)}</td>
                 <td>
-                  <select
-                    className={`badge-status s-${o.status}`}
-                    value={o.status}
-                    aria-label={`Estado de la orden ${o.id}`}
-                    onChange={(e) => onSave('put', `/orders/${o.id}`, { status: e.target.value }, 'Estado actualizado.')}
-                  >
-                    {ORDER_STATUSES.map((s) => (
-                      <option key={s} value={s}>{STATUS_LABELS[s]}</option>
-                    ))}
-                  </select>
+                  {canWrite ? (
+                    <select
+                      className={`badge-status s-${o.status}`}
+                      value={o.status}
+                      aria-label={`Estado de la orden ${o.id}`}
+                      onChange={(e) => onSave('put', `/orders/${o.id}`, { status: e.target.value }, 'Estado actualizado.')}
+                    >
+                      {ORDER_STATUSES.map((s) => (
+                        <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className={`badge-status s-${o.status}`}>{STATUS_LABELS[o.status] || o.status}</span>
+                  )}
                 </td>
                 <td>
                   <button className="linklike" onClick={() => toggle(o)}>
@@ -762,7 +784,7 @@ function Orders({ orders, onSave }) {
   )
 }
 
-function CouponsTab({ run }) {
+function CouponsTab({ run, canWrite }) {
   const [coupons, setCoupons] = useState([])
   const load = useCallback(async () => {
     const res = await api.get('/coupons')
@@ -770,14 +792,14 @@ function CouponsTab({ run }) {
   }, [])
   useEffect(() => { load() }, [load, run])
 
-  return <Coupons coupons={coupons} onSave={async (m, p, b, msg) => {
+  return <Coupons coupons={coupons} canWrite={canWrite} onSave={async (m, p, b, msg) => {
     const ok = await run(m, p, b, msg)
     if (ok) load()
     return ok
   }} />
 }
 
-function Coupons({ coupons, onSave }) {
+function Coupons({ coupons, onSave, canWrite }) {
   const [form, setForm] = useState({ code: '', discount_percent: '', max_uses: '' })
 
   async function create(event) {
@@ -807,17 +829,18 @@ function Coupons({ coupons, onSave }) {
     <>
       <h2>Cupones ({coupons.length})</h2>
 
-      <form className="card form admin-form" onSubmit={create}>
-        <h3>Nuevo cupón</h3>
-        <div className="field-row">
-          <div className="field">
-            <label htmlFor="coupon-code">Código</label>
-            <input id="coupon-code" required value={form.code}
-              onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })} />
-          </div>
-          <div className="field">
-            <label htmlFor="coupon-percent">Descuento (%)</label>
-            <input id="coupon-percent" required type="number" min="1" max="100" value={form.discount_percent}
+      {canWrite && (
+        <form className="card form admin-form" onSubmit={create}>
+          <h3>Nuevo cupón</h3>
+          <div className="field-row">
+            <div className="field">
+              <label htmlFor="coupon-code">Código</label>
+              <input id="coupon-code" required value={form.code}
+                onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })} />
+            </div>
+            <div className="field">
+              <label htmlFor="coupon-percent">Descuento (%)</label>
+              <input id="coupon-percent" required type="number" min="1" max="100" value={form.discount_percent}
               onChange={(e) => setForm({ ...form, discount_percent: e.target.value })} />
           </div>
           <div className="field">
@@ -829,10 +852,11 @@ function Coupons({ coupons, onSave }) {
         <button className="btn btn-solid" type="submit" disabled={expiryInvalid}>Crear cupón</button>
         {expiryInvalid && <span className="muted">Entre 1 y 100 % de descuento, y al menos un uso.</span>}
       </form>
+      )}
 
       <table className="table">
         <thead>
-          <tr><th>Código</th><th>Descuento</th><th>Usos</th><th>Caduca</th><th /></tr>
+          <tr><th>Código</th><th>Descuento</th><th>Usos</th><th>Caduca</th>{canWrite && <th />}</tr>
         </thead>
         <tbody>
           {coupons.map((c) => (
@@ -841,19 +865,21 @@ function Coupons({ coupons, onSave }) {
               <td>{c.discount_percent}%</td>
               <td>{c.used_count} / {c.max_uses}</td>
               <td>{c.expires_at ? new Date(c.expires_at).toLocaleDateString() : 'nunca'}</td>
-              <td>
-                <button className="linklike" onClick={() => remove(c)}>Retirar</button>
-              </td>
+              {canWrite && (
+                <td>
+                  <button className="linklike" onClick={() => remove(c)}>Retirar</button>
+                </td>
+              )}
             </tr>
           ))}
-          {coupons.length === 0 && <tr><td colSpan="5" className="muted">No hay cupones.</td></tr>}
+          {coupons.length === 0 && <tr><td colSpan={canWrite ? 5 : 4} className="muted">No hay cupones.</td></tr>}
         </tbody>
       </table>
     </>
   )
 }
 
-function ReviewsTab({ run }) {
+function ReviewsTab({ run, canWrite }) {
   const [reviews, setReviews] = useState([])
   const load = useCallback(async () => {
     const res = await api.get('/admin/reviews')
@@ -861,14 +887,14 @@ function ReviewsTab({ run }) {
   }, [])
   useEffect(() => { load() }, [load, run])
 
-  return <Reviews reviews={reviews} onSave={async (m, p, b, msg) => {
+  return <Reviews reviews={reviews} canWrite={canWrite} onSave={async (m, p, b, msg) => {
     const ok = await run(m, p, b, msg)
     if (ok) load()
     return ok
   }} />
 }
 
-function Reviews({ reviews, onSave }) {
+function Reviews({ reviews, onSave, canWrite }) {
   async function remove(review) {
     if (!window.confirm(`¿Borrar la reseña de «${review.book_title}»? Es permanente.`)) return
     await onSave('del', `/reviews/${review.id}`, undefined, 'Reseña borrada.')
@@ -883,7 +909,7 @@ function Reviews({ reviews, onSave }) {
       </p>
       <table className="table">
         <thead>
-          <tr><th>Libro</th><th>Autor de la reseña</th><th>Nota</th><th>Comentario</th><th /></tr>
+          <tr><th>Libro</th><th>Autor de la reseña</th><th>Nota</th><th>Comentario</th>{canWrite && <th />}</tr>
         </thead>
         <tbody>
           {reviews.map((r) => (
@@ -892,12 +918,14 @@ function Reviews({ reviews, onSave }) {
               <td>{r.author_email}</td>
               <td>{r.rating} / 5</td>
               <td>{r.comment || '—'}</td>
-              <td>
-                <button className="linklike" onClick={() => remove(r)}>Borrar</button>
-              </td>
+              {canWrite && (
+                <td>
+                  <button className="linklike" onClick={() => remove(r)}>Borrar</button>
+                </td>
+              )}
             </tr>
           ))}
-          {reviews.length === 0 && <tr><td colSpan="5" className="muted">No hay reseñas.</td></tr>}
+          {reviews.length === 0 && <tr><td colSpan={canWrite ? 5 : 4} className="muted">No hay reseñas.</td></tr>}
         </tbody>
       </table>
     </>

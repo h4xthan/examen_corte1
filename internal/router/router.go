@@ -60,14 +60,20 @@ func New(deps Deps, bookHandler *transport.BookHandler, userHandler *transport.U
 	optAuth := middleware.OptionalAuth(deps.Sessions, deps.Resolver, middleware.SessionCookieName)
 	admin := func(h http.HandlerFunc) http.Handler { return auth(middleware.AdminOnly(h)) }
 
-	// Today there is one administrator, and AdminOnly is enough. The college
-	// brief opens the panel to two operating roles who are not administrators:
-	// a capturista who manages the catalogue and an auditor who only reads it.
-	// This is the vector they arrive on, so the middleware set is spelled out
-	// here rather than reused through a helper: every route below reads like a
-	// sentence with its own subjects.
+	// The panel opens to three roles who are not the same kind: an admin, a
+	// capturista and an auditor. The server reads the role from the users table
+	// on every request, so this is the enforcement and the tabs are only
+	// courtesy. The gates are spelled out per route below rather than reused
+	// through a helper, so every route reads like a sentence with its own
+	// subjects:
+	//
+	//   staff  — writes the catalogue. The capturista only: the admin no longer
+	//            captures books, and the auditor is there to inspect, not change.
+	//   panel  — reads the shop. admin, capturista and auditor. The auditor can
+	//            see everything, so every read in the panel and every global
+	//            listing sits behind this gate.
 	staff := func(h http.HandlerFunc) http.Handler {
-		return auth(middleware.RequireRoles(model.RoleAdmin, model.RoleCapturista)(h))
+		return auth(middleware.RequireRoles(model.RoleCapturista)(h))
 	}
 	panel := func(h http.HandlerFunc) http.Handler {
 		return auth(middleware.RequireRoles(model.RoleAdmin, model.RoleCapturista, model.RoleAuditor)(h))
@@ -75,9 +81,9 @@ func New(deps Deps, bookHandler *transport.BookHandler, userHandler *transport.U
 
 	// The catalogue is public to read. Writing to it is not: an anonymous
 	// POST /books was six of the original routes with no auth at all, which let
-	// anyone rewrite the shop. Now the writing roles are the admin and the
-	// capturista, and the auditor — who is there to inspect, not to change —
-	// gets no write route at all.
+	// anyone rewrite the shop. Capturing it is the capturista's job alone — the
+	// admin was taken off the catalogue writes and the auditor gets none — and
+	// every write is an audited act.
 	mux.Handle("GET /books", optAuth(http.HandlerFunc(bookHandler.List)))
 	mux.Handle("GET /books/{id}", optAuth(http.HandlerFunc(bookHandler.Get)))
 	mux.Handle("POST /books", staff(bookHandler.Create))
@@ -111,16 +117,17 @@ func New(deps Deps, bookHandler *transport.BookHandler, userHandler *transport.U
 	// obtains the token it must echo on every state-changing request.
 	mux.HandleFunc("GET /auth/csrf", middleware.CSRFToken(deps.CookieSecure))
 
-	// Global listings are admin-only. A customer has no business enumerating
+	// Global listings are panel-only. A customer has no business enumerating
 	// every account or every order in the system, and the frontend uses
-	// /users/me and the caller's own orders instead.
-	mux.Handle("GET /users", admin(http.HandlerFunc(userHandler.List)))
+	// /users/me and the caller's own orders instead. The auditor exists to read
+	// the whole shop, so the listings are open to the three panel roles.
+	mux.Handle("GET /users", panel(http.HandlerFunc(userHandler.List)))
 	mux.Handle("GET /users/me", auth(http.HandlerFunc(userHandler.Me)))
 	mux.Handle("GET /users/{id}", auth(http.HandlerFunc(userHandler.Get)))
 	mux.Handle("PUT /users/{id}", auth(http.HandlerFunc(userHandler.Update)))
 	mux.Handle("DELETE /users/{id}", auth(http.HandlerFunc(userHandler.Delete)))
 
-	mux.Handle("GET /orders", admin(http.HandlerFunc(orderHandler.List)))
+	mux.Handle("GET /orders", panel(http.HandlerFunc(orderHandler.List)))
 	// The caller's own history. Registered before /orders/{id} out of caution, not
 	// necessity: the more specific literal pattern wins on its own.
 	mux.Handle("GET /orders/me", auth(http.HandlerFunc(orderHandler.ListMine)))
@@ -182,15 +189,15 @@ func New(deps Deps, bookHandler *transport.BookHandler, userHandler *transport.U
 	mux.Handle("PUT /addresses/{id}", auth(http.HandlerFunc(addressHandler.Update)))
 	mux.Handle("DELETE /addresses/{id}", auth(http.HandlerFunc(addressHandler.Delete)))
 
-	mux.Handle("GET /admin/stats", admin(adminHandler.Stats))
+	mux.Handle("GET /admin/stats", panel(adminHandler.Stats))
 
 	// The users interface: a management view of the whole directory, so none of
-	// it is an ownership check — it is precisely what the admin is for. The
-	// customers' own /users routes stay next to them, opened to the session
-	// that owns the row.
-	mux.Handle("GET /admin/users", admin(adminHandler.Users))
+	// it is an ownership check — that is precisely what the panel is for. The
+	// auditor reads it; every write below stays admin-only. The customers' own
+	// /users routes stay next to them, opened to the session that owns the row.
+	mux.Handle("GET /admin/users", panel(adminHandler.Users))
 	mux.Handle("POST /admin/users", admin(adminHandler.Create))
-	mux.Handle("GET /admin/users/{id}", admin(adminHandler.Get))
+	mux.Handle("GET /admin/users/{id}", panel(adminHandler.Get))
 	mux.Handle("PUT /admin/users/{id}", admin(adminHandler.Update))
 	// Baja and its mirror. Their numbering is unnatural on purpose: "baja" the
 	// account defers nothing and returns 204, "activate" returns the row, and
@@ -209,18 +216,21 @@ func New(deps Deps, bookHandler *transport.BookHandler, userHandler *transport.U
 	// record it can read it back.
 	mux.Handle("GET /admin/audit", panel(adminHandler.Audit))
 
-	// The moderation queue. Admin-only because the rows carry author email
-	// addresses, which the public book page has no use for.
-	mux.Handle("GET /admin/reviews", admin(adminHandler.Reviews))
+	// The moderation queue. The auditor reads it as part of "see everything";
+	// removing a review is a write and stays admin-only. The queue carries
+	// author email addresses, which the public book page has no use for.
+	mux.Handle("GET /admin/reviews", panel(adminHandler.Reviews))
 
 	// A full logical dump of the database. Admin-only and POST, and that is the
 	// whole access control: the dump carries every password hash and every reset
 	// token, so it must not be reachable by a customer, and it must not be a GET
 	// that a link preview or a browser extension could set off by accident.
 	// The backups interface — listing and downloading the dumps already taken —
-	// is mounted next to it and shares the same guard.
+	// is mounted next to it and shares the same guard, with one split: the
+	// auditor may LIST the dumps as part of seeing everything, but downloading
+	// one (the credential material itself) stays admin-only.
 	mux.Handle("POST /admin/backup", admin(http.HandlerFunc(backupHandler.Create)))
-	mux.Handle("GET /admin/backups", admin(http.HandlerFunc(backupHandler.List)))
+	mux.Handle("GET /admin/backups", panel(http.HandlerFunc(backupHandler.List)))
 	mux.Handle("GET /admin/backups/{name}", admin(http.HandlerFunc(backupHandler.Download)))
 
 	// Order matters. CSRF sits outside Auth because it must see the session

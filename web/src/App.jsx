@@ -26,7 +26,7 @@ const NAV_PRESETS = [
 ]
 
 export default function App() {
-  const { user, isAdmin, setUser } = useAuth()
+  const { user, isPanelMember, setUser } = useAuth()
   const navigate = useNavigate()
   const [cartCount, setCartCount] = useState(() => countUnits(getCart()))
   const [query, setQuery] = useState('')
@@ -89,7 +89,7 @@ export default function App() {
                 {/* The admin link is a shortcut, not a permission. The route
                     behind it re-checks, and the server checks again on every
                     call. */}
-                {isAdmin && (
+                {isPanelMember && (
                   <Link to="/admin" className="action-link">Administración</Link>
                 )}
                 <button className="linklike" onClick={logout}>
@@ -132,7 +132,7 @@ export default function App() {
           <Link to="/catalogo">Catálogo</Link>
           <Link to="/cart">Carrito</Link>
           <Link to="/profile">Cuenta</Link>
-          <Link to="/admin">Administración</Link>
+          {isPanelMember && <Link to="/admin">Administración</Link>}
         </nav>
       </footer>
     </div>
